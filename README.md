@@ -8,6 +8,11 @@ This code has been developed and used in a production environment for one year.
 There follows some examples of use. For further examples, see `tests/simple/tests.py`.
 
 ```python
+from django.db import models
+from django_model_cache import CacheController
+import uuid
+
+
 class Brand(models.Model):
     name = models.CharField(max_length=128)
 

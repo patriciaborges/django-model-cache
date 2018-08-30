@@ -4,12 +4,12 @@ from setuptools import setup
 
 setup(
     name='django-model-cache',
-    version='1.0.0',
+    version='1.0.1',
     license='MIT',
     author='Patrícia Borges',
     author_email='pattyborges17@gmail.com',
     description='An easy-to-use cache for Django models.',
-    long_description='',
+    long_description=open('README.md').read(),
     packages=['django_model_cache'],
     url='https://github.com/patriciaborges/django-model-cache',
     classifiers=(
