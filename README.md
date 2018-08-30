@@ -1,5 +1,7 @@
 # django-model-cache
 
+[![Build Status](https://travis-ci.com/patriciaborges/django-model-cache.svg?branch=master)](https://travis-ci.com/patriciaborges/django-model-cache)
+
 An easy-to-use cache for Django models.
 
 This code has been developed and used in a production environment for one year.
