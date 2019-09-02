@@ -1,6 +1,5 @@
 from django.core.cache import caches
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models.manager import ManagerDescriptor
 from django.db import models
 from django.conf import settings
 
@@ -8,7 +7,7 @@ import json
 import logging
 
 
-class CacheController(object):
+class CacheController(models.Manager):
 
     def __init__(self,
                  fields=set(),
@@ -16,6 +15,7 @@ class CacheController(object):
                  backend='default',
                  timeout=getattr(settings, 'CACHE_MODEL_TIMEOUT', None)
                  ):
+        super(CacheController, self).__init__()
         self._cache = caches[backend]
         self.fields = set(fields)
         self.fields.add('pk')
@@ -74,19 +74,18 @@ class CacheController(object):
         self._cache.delete(cache_key)
 
     def contribute_to_class(self, model, name):
-        self.model = model
+        super(CacheController, self).contribute_to_class(model, name)
 
         if self.related_fields:
             def load_related(instance, *args):
                 related_fields = args if args else self.related_fields
                 for field in related_fields:
-                    model_field = self.model._meta.get_field_by_name(field)[0]
+                    model_field = self.model._meta.get_field(field)
                     related_pk = getattr(instance, model_field.attname)
-                    related_instance = model_field.rel.to.cache.get(pk=related_pk) if related_pk else None
+                    related_instance = model_field.remote_field.model.cache.get(pk=related_pk) if related_pk else None
                     setattr(instance, model_field.get_cache_name(), related_instance)
 
             self.model.load_related = load_related
-        setattr(model, name, ManagerDescriptor(self))
 
         models.signals.post_save.connect(self._post_save, sender=model)
         models.signals.post_delete.connect(self._post_delete, sender=model)

@@ -24,7 +24,7 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('code', models.UUIDField(default=uuid.uuid4, unique=True, editable=False)),
                 ('name', models.CharField(max_length=255)),
-                ('brand', models.ForeignKey(to='simple.Brand')),
+                ('brand', models.ForeignKey(to='simple.Brand', on_delete=models.deletion.CASCADE)),
             ],
         ),
         migrations.AlterUniqueTogether(
