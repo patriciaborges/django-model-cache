@@ -1,4 +1,4 @@
 
-from .core import CacheController
+from .core import CacheManager
 
-__all__ = [CacheController]
+__all__ = [CacheManager]

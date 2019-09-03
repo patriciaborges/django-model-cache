@@ -11,14 +11,14 @@ There follows some examples of use. For further examples, see `tests/simple/test
 
 ```python
 from django.db import models
-from django_model_cache import CacheController
+from django_model_cache import CacheManager
 import uuid
 
 
 class Brand(models.Model):
     name = models.CharField(max_length=128)
 
-    cache = CacheController(timeout=None)
+    cache = CacheManager(timeout=None)
 
 
 class Product(models.Model):
@@ -26,7 +26,7 @@ class Product(models.Model):
     brand = models.ForeignKey('Brand')
     name = models.CharField(max_length=255)
 
-    cache = CacheController(fields=['code', ('brand_id', 'name')], related_fields=['brand'], timeout=None)
+    cache = CacheManager(fields=['code', ('brand_id', 'name')], related_fields=['brand'], timeout=None)
 
     class Meta:
         unique_together = ('name', 'brand')
