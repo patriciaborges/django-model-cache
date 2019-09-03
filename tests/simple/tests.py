@@ -3,7 +3,7 @@ from django.test import TransactionTestCase
 import uuid
 
 
-class CacheControllerTest(TransactionTestCase):
+class CacheManagerTest(TransactionTestCase):
     def setUp(self):
         self.brand = Brand.objects.create(name='Apple')
         self.product = Product.objects.create(brand=self.brand, name='iPhone X Black 256GB')
@@ -30,31 +30,15 @@ class CacheControllerTest(TransactionTestCase):
                     value2 = getattr(obj, field.attname)
                     self.assertEquals(value1, value2)
 
-    def test_check_update_model_remove_field_and_load_an_old_cache_object(self):
-        import json
-        from django.core.serializers.json import DjangoJSONEncoder
-
+    def test_check_update_model_and_load_an_old_cache_object(self):
+        old_name = self.product.name
         key = Product.cache._make_key(**{'pk': self.product.pk})
-        serialized = Product.cache._serialize(self.product)
-        dict_obj = json.loads(serialized)
-        dict_obj['new_field'] = 1
-        new_serialized = json.dumps(dict_obj, cls=DjangoJSONEncoder)
-        Product.cache._cache.set(key, new_serialized)
+        Product.cache._cache.set(key, self.product)
+        self.assertEquals(old_name, self.product.name)
+        self.product.name = 'new'
+        self.product.save()
         product = Product.cache.get(pk=self.product.pk)
-        self.assertEquals(product, self.product)
-
-    def test_check_update_model_add_field_and_load_an_old_cache_object(self):
-        import json
-        from django.core.serializers.json import DjangoJSONEncoder
-
-        key = Product.cache._make_key(**{'pk': self.product.pk})
-        serialized = Product.cache._serialize(self.product)
-        dict_obj = json.loads(serialized)
-        del dict_obj['name']
-        new_serialized = json.dumps(dict_obj, cls=DjangoJSONEncoder)
-        Product.cache._cache.set(key, new_serialized)
-        product = Product.cache.get(pk=self.product.pk)
-        self.assertEquals(product, self.product)
+        self.assertEquals(product.name, self.product.name)
 
     def test_load_related(self):
         with self.assertNumQueries(0):
@@ -97,14 +81,6 @@ class CacheControllerTest(TransactionTestCase):
         key = Product.cache._make_key(**{'pk': product_id})
         self.assertIsNone(caches['default'].get(key))
 
-    def test_deserializer_must_return_none_if_missing_field(self):
-        import json
-        data_string = Product.cache._serialize(self.product)
-        data = json.loads(data_string)
-        del data["name"]
-        new_data_string = json.dumps(data)
-        self.assertIsNone(Product.cache._deserialize(new_data_string))
-
     def test_get_multiple(self):
         def make_qs():
             return Product.objects.filter(brand=self.brand)
@@ -112,15 +88,15 @@ class CacheControllerTest(TransactionTestCase):
         Product.cache.delete_cache_multiple('apple_products')
 
         with self.assertNumQueries(1):
-            objs = Product.cache.get_multiple('apple_products', make_qs, timeout=3600)
+            objs = Product.cache.get_multiple('apple_products', make_qs(), timeout=3600)
             self.assertEqual(len(objs), 2)
 
         with self.assertNumQueries(0):
-            objs = Product.cache.get_multiple('apple_products', make_qs, timeout=3600)
+            objs = Product.cache.get_multiple('apple_products', make_qs(), timeout=3600)
 
             self.assertEqual(len(objs), 2)
             self.assertEqual(set(objs), set([self.product, self.product_2]))
 
         Product.cache.delete_cache_multiple('apple_products')
         with self.assertNumQueries(1):
-            objs = Product.cache.get_multiple('apple_products', make_qs, timeout=3600)
+            objs = Product.cache.get_multiple('apple_products', make_qs(), timeout=3600)

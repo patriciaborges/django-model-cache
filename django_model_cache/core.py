@@ -1,5 +1,4 @@
 from django.core.cache import caches
-from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.conf import settings
 
@@ -7,7 +6,12 @@ import json
 import logging
 
 
-class CacheController(models.Manager):
+def is_fetched(obj, relation_name):
+    cache_name = '_{}_cache'.format(relation_name)
+    return getattr(obj, cache_name, False)
+
+
+class CacheManager(models.Manager):
 
     def __init__(self,
                  fields=set(),
@@ -15,7 +19,7 @@ class CacheController(models.Manager):
                  backend='default',
                  timeout=getattr(settings, 'CACHE_MODEL_TIMEOUT', None)
                  ):
-        super(CacheController, self).__init__()
+        super(CacheManager, self).__init__()
         self._cache = caches[backend]
         self.fields = set(fields)
         self.fields.add('pk')
@@ -41,7 +45,7 @@ class CacheController(models.Manager):
         except self.model.DoesNotExist:
             return None
 
-    def get_multiple(self, key, make_qs, timeout):
+    def get_multiple(self, key, queryset, timeout):
         cache_key = self._make_key_multiple(key)
         cached_multiple_value = self._cache.get(cache_key)
         cache_hit_pks = set([])
@@ -60,40 +64,46 @@ class CacheController(models.Manager):
             if not has_cache_miss:
                 return result
 
-        objs = make_qs()
         pks = []
-        for obj in objs:
+        for obj in queryset:
             pks.append(obj.pk)
             if obj.pk not in cache_hit_pks:
                 self._save_cache(obj)
         self._cache.set(cache_key, json.dumps(pks), timeout=timeout)
-        return objs
+        return queryset
 
     def delete_cache_multiple(self, key):
         cache_key = self._make_key_multiple(key)
         self._cache.delete(cache_key)
 
     def contribute_to_class(self, model, name):
-        super(CacheController, self).contribute_to_class(model, name)
+        super(CacheManager, self).contribute_to_class(model, name)
 
-        if self.related_fields:
-            def load_related(instance, *args):
-                related_fields = args if args else self.related_fields
-                for field in related_fields:
+        def load_related(instance, *args):
+            related_fields = args if args else self.related_fields
+            for field in related_fields:
+                if not is_fetched(instance, field):
                     model_field = self.model._meta.get_field(field)
                     related_pk = getattr(instance, model_field.attname)
-                    related_instance = model_field.remote_field.model.cache.get(pk=related_pk) if related_pk else None
+                    RemoteModel = model_field.remote_field.model
+                    related_instance = None
+                    if related_pk:
+                        try:
+                            manager = RemoteModel.cache
+                        except AttributeError:
+                            manager = RemoteModel._default_manager
+                        related_instance = manager.get(pk=related_pk)
+
                     setattr(instance, model_field.get_cache_name(), related_instance)
 
-            self.model.load_related = load_related
+        self.model.load_related = load_related
 
         models.signals.post_save.connect(self._post_save, sender=model)
         models.signals.post_delete.connect(self._post_delete, sender=model)
 
     def _get_from_cache(self, **kwargs):
         key = self._make_key(**kwargs)
-        cached_value = self._cache.get(key)
-        return self._deserialize(cached_value) if cached_value else None
+        return self._cache.get(key)
 
     def _get_from_db(self, **kwargs):
         obj = self.model.objects.get(**kwargs)
@@ -101,7 +111,7 @@ class CacheController(models.Manager):
         return obj
 
     def _save_cache(self, instance):
-        serialized_obj = self._serialize(instance)
+        instance.load_related()
 
         for field in self.fields:
             if type(field) is tuple:
@@ -113,7 +123,7 @@ class CacheController(models.Manager):
                 value = getattr(instance, field)
                 key = self._make_key(**{field: value}) if value else None
             if key:
-                self._cache.set(key, serialized_obj, timeout=self.timeout)
+                self._cache.set(key, instance, timeout=self.timeout)
 
     def _delete_cache(self, instance):
         for field in self.fields:
@@ -142,31 +152,6 @@ class CacheController(models.Manager):
         query = hash(query)
         return "{app}.{cls_name}.{query}".format(
             app=self.model._meta.app_label, cls_name=self.model.__name__, query=query)
-
-    def _serialize(self, obj):
-        from django.db.models.fields.files import FileField
-
-        dict_obj = {}
-        for field in self.model._meta.local_fields:
-            value = getattr(obj, field.attname)
-            if isinstance(field, FileField):
-                dict_obj[field.attname] = value.name
-                continue
-            dict_obj[field.attname] = value
-
-        return json.dumps(dict_obj, cls=DjangoJSONEncoder)
-
-    def _deserialize(self, data):
-        obj = json.loads(data)
-
-        instance = self.model()
-
-        for field in self.model._meta.local_fields:
-            if field.attname in obj:
-                setattr(instance, field.attname, field.to_python(obj[field.attname]))
-            else:
-                return None
-        return instance
 
     def _post_save(self, instance, **kwargs):
         self._save_cache(instance)
